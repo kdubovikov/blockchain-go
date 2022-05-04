@@ -22,18 +22,6 @@ type Transaction struct {
 	Outputs []TxOutput
 }
 
-type TxOutput struct {
-	Value      int
-	PubKeyHash []byte
-}
-
-type TxInput struct {
-	ID        []byte
-	Out       int
-	Signature []byte
-	PubKey    []byte
-}
-
 func CoinbaseTx(to, data string) *Transaction {
 	if data == "" {
 		data = fmt.Sprintf("Coins to %s", to)
@@ -61,29 +49,6 @@ func (tx *Transaction) SetID() {
 
 func (tx *Transaction) IsCoinbase() bool {
 	return len(tx.Inputs) == 1 && len(tx.Inputs[0].ID) == 0 && tx.Inputs[0].Out == -1
-}
-
-func (in *TxInput) UsesKey(pubKeyHash []byte) bool {
-	lockingHash := wallet.PublicKeyHash(in.PubKey)
-
-	return bytes.Compare(lockingHash, pubKeyHash) == 0
-}
-
-func (out *TxOutput) Lock(address []byte) {
-	pubKeyHash := wallet.Base58Decode(address)
-	pubKeyHash = pubKeyHash[1 : len(pubKeyHash)-4]
-	out.PubKeyHash = pubKeyHash
-}
-
-func (out *TxOutput) IsLockedWithKey(pubKeyHash []byte) bool {
-	return bytes.Compare(out.PubKeyHash, pubKeyHash) == 0
-}
-
-func NewTXOutput(value int, address string) *TxOutput {
-	txo := &TxOutput{value, nil}
-	txo.Lock([]byte(address))
-
-	return txo
 }
 
 func (tx Transaction) Serialize() []byte {
@@ -217,7 +182,7 @@ func (tx *Transaction) TrimmedCopy() Transaction {
 	return txCopy
 }
 
-func NewTransaction(from, to string, amount int, chain *BlockChain) *Transaction {
+func NewTransaction(from, to string, amount int, UTXO *UTXOSet) *Transaction {
 	var inputs []TxInput
 	var outputs []TxOutput
 
@@ -226,7 +191,7 @@ func NewTransaction(from, to string, amount int, chain *BlockChain) *Transaction
 	w := wallets.GetWallet(from)
 
 	pubKeyHash := wallet.PublicKeyHash(w.PublicKey)
-	acc, validOutputs := chain.FindSpendableOutputs(pubKeyHash, amount)
+	acc, validOutputs := UTXO.FindSpendableOutputs(pubKeyHash, amount)
 
 	if acc < amount {
 		log.Panic("Error: not enough funds")
@@ -250,7 +215,7 @@ func NewTransaction(from, to string, amount int, chain *BlockChain) *Transaction
 
 	tx := Transaction{nil, inputs, outputs}
 	tx.ID = tx.Hash()
-	chain.SignTransaction(&tx, w.PrivateKey)
+	UTXO.Blockchain.SignTransaction(&tx, w.PrivateKey)
 
 	return &tx
 }
