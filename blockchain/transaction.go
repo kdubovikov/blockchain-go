@@ -213,3 +213,12 @@ func NewTransaction(from, to string, amount int, UTXO *UTXOSet) *Transaction {
 
 	return &tx
 }
+
+func DeserializeTransaction(data []byte) Transaction {
+	var transaction Transaction
+
+	decoder := gob.NewDecoder(bytes.NewReader(data))
+	err := decoder.Decode(&transaction)
+	Handle(err)
+	return transaction
+}
