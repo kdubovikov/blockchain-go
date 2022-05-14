@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/gob"
 	"log"
+	"time"
+
+	"github.com/dgraph-io/badger"
 )
 
 type Block struct {
+	Timestamp    int64
 	Hash         []byte
 	Transactions []*Transaction
 	PrevHash     []byte
@@ -15,7 +19,7 @@ type Block struct {
 }
 
 func CreateBlock(txs []*Transaction, prevHash []byte, height int) *Block {
-	block := &Block{[]byte{}, txs, prevHash, 0, height}
+	block := &Block{time.Now().Unix(), []byte{}, txs, prevHash, 0, height}
 
 	pow := NewProof(block)
 	nonce, hash := pow.Run()
@@ -27,6 +31,37 @@ func CreateBlock(txs []*Transaction, prevHash []byte, height int) *Block {
 
 func Genesis(coinbase *Transaction) *Block {
 	return CreateBlock([]*Transaction{coinbase}, []byte{}, 0)
+}
+
+func (chain *BlockChain) AddBlock(block *Block) {
+	err := chain.Database.Update(func(txn *badger.Txn) error {
+		if _, err := txn.Get(block.Hash); err == nil {
+			return nil
+		}
+
+		blockData := block.Serialize()
+		err := txn.Set(block.Hash, blockData)
+		Handle(err)
+
+		item, err := txn.Get([]byte("lh"))
+		Handle(err)
+		lastHash, _ := item.ValueCopy(nil)
+
+		item, err = txn.Get(lastHash)
+		Handle(err)
+		lastBlockData, _ := item.ValueCopy(nil)
+
+		lastBlock := Deserialize(lastBlockData)
+
+		if block.Height > lastBlock.Height {
+			err = txn.Set([]byte("lh"), block.Hash)
+			Handle(err)
+			chain.LastHash = block.Hash
+		}
+
+		return nil
+	})
+	Handle(err)
 }
 
 func (b *Block) Serialize() []byte {
